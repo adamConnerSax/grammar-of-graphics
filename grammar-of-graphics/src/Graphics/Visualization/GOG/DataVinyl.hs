@@ -1,8 +1,12 @@
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
-module Graphics.Visualization.GOG.Data
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
+module Graphics.Visualization.GOG.DataVinyl
   (
     -- * Field Types 
     FieldType(..)
@@ -29,16 +33,28 @@ module Graphics.Visualization.GOG.Data
 where
 
 import           Control.Arrow                  ( second )
+--import           Control.Lens                  as L
 import qualified Data.Array                    as A
+
 import qualified Data.Map                      as M
 --import           Data.Maybe                     ( catMaybes )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Time                     as Time
 
--- | Enum to flag which type is being held
-data FieldType = StrField | CountField | NumberField | DateTimeField | IntYearField | BooleanField deriving (Show, Enum, Bounded, Ord, Eq)
+import           Data.Kind                      ( Type )
+import           GHC.TypeLits                   ( Symbol )
+import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl.Derived            as V
+import qualified Data.Vinyl.Functor            as V
+import qualified Data.Vinyl.TypeLevel          as V
+import qualified Frames                        as F
+import qualified Frames.Melt                   as F
+import qualified Frames.RecF                   as F
 
+{-
+-- | Enum to flag which type is being held
+--data FieldType = StrField | CountField | NumberField | DateTimeField | IntYearField | BooleanField deriving (Show, Enum, Bounded, Ord, Eq)
 -- | type to store a single value, either text, numerical or temporal
 data FieldValue where
   Str ::Text -> FieldValue
@@ -47,6 +63,7 @@ data FieldValue where
   DateTime ::Time.LocalTime -> FieldValue
   IntYear ::Int -> FieldValue
   Boolean ::Bool -> FieldValue deriving (Eq, Show)
+
 
 -- don't expose this constructor!!
 data FieldLoader a = FieldLoader { flType :: FieldType, fLoader :: a -> FieldValue }
@@ -78,9 +95,17 @@ itemFieldType (DateTime _) = DateTimeField
 itemFieldType (IntYear  _) = IntYearField
 itemFieldType (Boolean  _) = BooleanField
 -}
+-}
+
+type Row rs = V.Rec V.ElField rs
+
+getField :: forall t rs a s . (t ~ '(s, a), t F.∈ rs) => Row rs -> a
+getField = F.rgetField @t
+
+{-
 -- | type to represent the Text version of column names and map to the index
 data FieldIndex k where
-  FieldIndex ::A.Ix k => M.Map T.Text k ->  A.Array k (T.Text, FieldType) -> FieldIndex k
+  FieldIndex ::A.Ix k => M.Map T.Text k ->  A.Array k T.Text -> FieldIndex k
 
 labelAt :: A.Ix k => FieldIndex k -> k -> T.Text
 labelAt (FieldIndex _ fa) k = fst $ fa A.! k
@@ -99,15 +124,22 @@ indexFor (FieldIndex indexMap _) l =
       )
       Right
     $ M.lookup l indexMap
+-}
 
+{-
 changeLabel
-  :: Show k => T.Text -> T.Text -> FieldIndex k -> Either T.Text (FieldIndex k)
+  :: forall x y rs. (V.KnownField x
+                    ,V.KnownField y
+                    ,V.Snd x ~ V.Snd y
+                    , ElemOf rs x
+                     V => T.Text -> T.Text -> FieldIndex k -> Either T.Text (FieldIndex k)
 changeLabel old new fi@(FieldIndex indexMap labelTypeArray) = do
   index <- indexFor fi old
   let newIndexMap    = M.insert new index (M.delete old indexMap)
       (_, fieldType) = labelTypeArray A.! index
       newLTA         = labelTypeArray A.// [(index, (new, fieldType))]
   return $ FieldIndex newIndexMap newLTA
+
 
 fieldIndexFromLabeledTypes :: [(T.Text, FieldType)] -> FieldIndex Int
 fieldIndexFromLabeledTypes labelsAndTypes =
@@ -138,7 +170,7 @@ checkLabels (DataRows fi _) ls = do
             <> (T.pack $ show fts)
   traverse f ls
 
-{-
+
 foldIndexedFieldInRows
   :: (Foldable f, A.Ix k)
   => FL.Fold FieldValue x
@@ -174,15 +206,12 @@ labeledFieldMinMax l (DataRows fi rows) = do
       <> " is not an ordered field type."
 -}
 
-
 buildDataRows
-  :: Traversable f => [(T.Text, FieldLoader a)] -> f a -> DataRows f Int
-buildDataRows labeledLoaders dat =
-  let fieldIndex =
-          fieldIndexFromLabeledTypes $ fmap (second flType) labeledLoaders
-      loaderArray = A.listArray (0, length labeledLoaders - 1)
-        $ fmap (fLoader . snd) labeledLoaders
-      rows = fmap (\a -> fmap ($ a) loaderArray) dat
-  in  DataRows fieldIndex rows
+  :: (Functor f, F.StripFieldNames rs, V.RMap (V.Unlabeled rs))
+  => F.Rec ((->) a) (V.Unlabeled rs)
+  -> f a
+  -> f (Row rs)
+buildDataRows dataLoaders dat =
+  fmap (\a -> F.withNames $ V.rmap (\f -> V.Identity (f a)) dataLoaders) dat
 
 
