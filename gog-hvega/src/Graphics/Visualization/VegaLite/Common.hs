@@ -14,10 +14,14 @@ module Graphics.Visualization.VegaLite.Common
   , viewConfigAsHvega
     -- * GOG 
   , toHvegaData
+    -- * Re-export
+  , module Graphics.Visualization.GOG.Data
   )
 where
 
-import qualified Graphics.Visualization.GOG.Data as GG
+import qualified Graphics.Visualization.GOG.Data
+                                               as GG
+import           Graphics.Visualization.GOG.Data
 import qualified Graphics.Vega.VegaLite        as GV
 
 import           Control.Arrow                  ( second )
@@ -61,7 +65,7 @@ toHvegaDataValue (GG.DateTime x) = GV.Str $ T.pack $ show x -- yyyy-mm-dd hh:mm:
 hvegaDataType :: GG.FieldType -> Maybe GV.DataType
 hvegaDataType GG.IntYearField  = Just $ GV.FoDate "%Y"
 hvegaDataType GG.DateTimeField = Just $ GV.FoDate "%Y-%mm-%dd %H:%M:%S"
-hvegaDataType _             = Nothing
+hvegaDataType _                = Nothing
 
 hvegaParseList :: GG.FieldIndex k -> [(T.Text, GV.DataType)]
 hvegaParseList (GG.FieldIndex _ labelTypeArray) =
@@ -82,5 +86,16 @@ toHvegaData (GG.DataRows fi rows) =
     $ FL.fold FL.list
     $ fmap (toHvegaDataRow fi) rows
 
+positionEncoding
+  :: (A.Ix k, Show k)
+  => GG.FieldIndex k
+  -> GV.Position
+  -> T.Text
+  -> GV.Measurement
+  -> [GV.PositionChannel]
+  -> Either T.Text GV.BuildLabelledSpecs
+positionEncoding fi pos label meas props = do
+  _ <- GG.indexFor fi label
+  return $ GV.position pos ([GV.PName label, GV.PmType meas] <> props)
 
 

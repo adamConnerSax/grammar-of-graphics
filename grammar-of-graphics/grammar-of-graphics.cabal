@@ -36,8 +36,6 @@ flag dump-core
 library
   exposed-modules:
       Graphics.Visualization.GOG.Data
-      Graphics.Visualization.GOG.DataVinyl
-      Graphics.Visualization.GOG.Encoding
   other-modules:
       Paths_grammar_of_graphics
   hs-source-dirs:
